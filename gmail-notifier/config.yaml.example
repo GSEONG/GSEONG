@@ -1,0 +1,22 @@
+# Gmail 데스크탑 알림 설정 예시
+# 이 파일을 config.yaml로 복사해서 사용하세요.
+
+# 이메일 폴링 간격 (초)
+poll_interval_seconds: 30
+
+# OAuth2 관련 파일 경로
+credentials_file: credentials.json
+token_file: token.json
+
+# 알림을 받을 이메일 필터 목록
+# from과 subject는 부분 일치 (대소문자 무관)
+# 두 조건 모두 만족해야 알림 (AND 조건)
+# 여러 필터 중 하나라도 만족하면 알림 (OR 조건)
+# 필터를 비워두면 모든 수신 이메일에 알림
+filters:
+  - from: "github.com"
+    subject: ""
+  - from: "boss@company.com"
+    subject: ""
+  - from: ""
+    subject: "긴급"
