@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"sync"
 	"sync/atomic"
 
 	"github.com/gen2brain/beeep"
@@ -14,25 +13,25 @@ const maxConcurrentPopups = 5
 
 type Notifier struct {
 	activePopups atomic.Int32
-	mu           sync.Mutex
+	soundCfg     SoundConfig
 }
 
-func NewNotifier() *Notifier {
-	return &Notifier{}
+func NewNotifier(soundCfg SoundConfig) *Notifier {
+	return &Notifier{soundCfg: soundCfg}
 }
 
 func (n *Notifier) Notify(msg *EmailMessage) {
 	log.Printf("[알림] From: %s | Subject: %s", msg.From, msg.Subject)
 
-	// 시스템 알림 + 소리
+	// 시스템 트레이 알림
 	title := fmt.Sprintf("새 이메일: %s", msg.From)
 	body := buildBody(msg)
 	if err := beeep.Notify(title, body, ""); err != nil {
 		log.Printf("시스템 알림 실패: %v", err)
 	}
-	if err := beeep.Beep(880, 300); err != nil {
-		log.Printf("알림음 실패: %v", err)
-	}
+
+	// 소리 재생
+	playSound(n.soundCfg)
 
 	// 동시에 열 수 있는 팝업 수 제한
 	if n.activePopups.Load() >= maxConcurrentPopups {

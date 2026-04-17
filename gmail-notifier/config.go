@@ -11,11 +11,19 @@ type FilterConfig struct {
 	Subject string `yaml:"subject"`
 }
 
+type SoundConfig struct {
+	Enabled         bool    `yaml:"enabled"`
+	File            string  `yaml:"file"`             // 커스텀 사운드 파일 경로 (WAV/MP3)
+	BeepFrequency   float64 `yaml:"beep_frequency"`   // Hz (file이 없을 때 사용)
+	BeepDurationMs  int     `yaml:"beep_duration_ms"` // 밀리초
+}
+
 type Config struct {
 	PollIntervalSeconds int            `yaml:"poll_interval_seconds"`
 	Filters             []FilterConfig `yaml:"filters"`
 	TokenFile           string         `yaml:"token_file"`
 	CredentialsFile     string         `yaml:"credentials_file"`
+	Sound               SoundConfig    `yaml:"sound"`
 }
 
 func defaultConfig() *Config {
@@ -24,6 +32,11 @@ func defaultConfig() *Config {
 		TokenFile:           "token.json",
 		CredentialsFile:     "credentials.json",
 		Filters:             []FilterConfig{},
+		Sound: SoundConfig{
+			Enabled:        true,
+			BeepFrequency:  880,
+			BeepDurationMs: 300,
+		},
 	}
 }
 
@@ -50,6 +63,12 @@ func loadConfig(path string) (*Config, error) {
 	}
 	if cfg.CredentialsFile == "" {
 		cfg.CredentialsFile = "credentials.json"
+	}
+	if cfg.Sound.BeepFrequency <= 0 {
+		cfg.Sound.BeepFrequency = 880
+	}
+	if cfg.Sound.BeepDurationMs <= 0 {
+		cfg.Sound.BeepDurationMs = 300
 	}
 
 	return cfg, nil

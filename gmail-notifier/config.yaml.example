@@ -8,6 +8,16 @@ poll_interval_seconds: 30
 credentials_file: credentials.json
 token_file: token.json
 
+# 알림 소리 설정
+sound:
+  enabled: true
+  # 커스텀 사운드 파일 경로 (WAV/MP3). 비워두면 시스템 비프음 사용.
+  # Linux: paplay → aplay → ffplay → mpg123 순으로 시도
+  file: ""
+  # 시스템 비프음 설정 (file이 비어 있을 때만 사용)
+  beep_frequency: 880    # Hz (기본: 880 = A5음)
+  beep_duration_ms: 300  # 재생 시간 (밀리초)
+
 # 알림을 받을 이메일 필터 목록
 # from과 subject는 부분 일치 (대소문자 무관)
 # 두 조건 모두 만족해야 알림 (AND 조건)

@@ -26,7 +26,7 @@ func main() {
 		log.Fatalf("Gmail 서비스 초기화 실패: %v", err)
 	}
 
-	notifier := NewNotifier()
+	notifier := NewNotifier(cfg.Sound)
 
 	watcher, err := NewWatcher(svc, cfg, notifier)
 	if err != nil {
