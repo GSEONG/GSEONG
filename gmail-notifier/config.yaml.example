@@ -22,42 +22,75 @@ sound:
 # 알림 필터 규칙
 # ─────────────────────────────────────────────
 #
-# [기본 규칙]
-#   - from    : 발신자 주소에 해당 문자열이 포함되면 매칭 (대소문자 무관, 부분 일치)
-#   - subject : 제목에 해당 문자열이 포함되면 매칭 (대소문자 무관, 부분 일치)
-#   - 빈 문자열("")은 "모두 허용" 을 의미합니다.
+# [필드 구조]
+#   from    : 발신자 주소에 매칭할 키워드 목록
+#   subject : 제목에 매칭할 키워드 목록
+#   regex   : true이면 키워드를 정규표현식으로 처리 (기본값: false)
+#
+# [키워드 매칭 방식]
+#   - regex: false (기본) → 대소문자 무관 부분 일치
+#   - regex: true         → Go 정규표현식 (대소문자 구분, (?i) 플래그로 무시 가능)
+#   - 목록이 비어 있으면 해당 필드는 "모두 허용" (와일드카드)
 #
 # [AND 조건 — 하나의 필터 항목 안에서]
-#   from과 subject 를 둘 다 지정하면 두 조건을 모두 만족해야 알림이 옵니다.
+#   from 목록과 subject 목록이 둘 다 매칭되어야 알림이 옵니다.
+#   (각 목록 내부에서는 하나라도 매칭되면 통과 — 아래 OR 규칙 참조)
 #
-#   예) noreply@github.com 에서 온 제목에 "merged" 가 포함된 이메일만 알림
-#     - from: "github.com"
-#       subject: "merged"
+# [OR 조건 1 — 같은 필드의 키워드 목록 안에서]
+#   from 또는 subject 에 키워드가 여러 개이면 하나라도 매칭되면 통과합니다.
 #
-# [OR 조건 — 여러 필터 항목 사이]
+#   예) github.com 또는 gitlab.com 발신 + 제목에 merged 또는 closed 포함
+#     - from:
+#         - "github.com"
+#         - "gitlab.com"
+#       subject:
+#         - "merged"
+#         - "closed"
+#
+# [OR 조건 2 — 여러 필터 항목 사이]
 #   필터 항목이 여럿이면 그 중 하나라도 매칭되면 알림이 옵니다.
 #
-#   예) GitHub 메일이거나, 제목에 "긴급"이 있는 이메일이면 알림
-#     - from: "github.com"
-#       subject: ""
-#     - from: ""
-#       subject: "긴급"
+#   예) GitHub/GitLab 메일이거나, 제목에 긴급/urgent 가 있으면 알림
+#     - from:
+#         - "github.com"
+#         - "gitlab.com"
+#       subject: []
+#     - from: []
+#       subject:
+#         - "긴급"
+#         - "urgent"
 #
-# [필터 없음 — filters 를 완전히 비워두면]
-#   모든 수신 이메일에 알림이 옵니다.
+# [필터 없음]
+#   filters: []  → 모든 수신 이메일에 알림
 #
-#     filters: []
+# [정규표현식 예시]
+#   regex: true 로 설정하면 Go regexp 문법을 사용합니다.
+#   - 대소문자 무시: (?i)패턴
+#   - 도메인 정확히 일치: @(github|gitlab)\.com$
+#   - 제목 시작 일치: ^\[긴급\]
 #
 # ─────────────────────────────────────────────
 # 아래는 복합 예시:
-#   1) github.com 발신 + 제목에 "merged" 포함  (AND)
-#   2) boss@company.com 발신이면 제목 무관      (OR)
-#   3) 발신자 무관 + 제목에 "긴급" 포함         (OR)
+#
+#   항목 1) GitHub/GitLab 발신 AND 제목에 merged/closed/approved 중 하나 포함
+#   항목 2) boss@company.com 발신이면 제목 무관 (와일드카드)
+#   항목 3) 정규표현식 — 제목이 [긴급] 또는 [URGENT] 로 시작하는 이메일
 # ─────────────────────────────────────────────
 filters:
-  - from: "github.com"
-    subject: "merged"
-  - from: "boss@company.com"
-    subject: ""
-  - from: ""
-    subject: "긴급"
+  - from:
+      - "github.com"
+      - "gitlab.com"
+    subject:
+      - "merged"
+      - "closed"
+      - "approved"
+
+  - from:
+      - "boss@company.com"
+    subject: []
+
+  - from: []
+    subject:
+      - "^\\[긴급\\]"
+      - "^\\[URGENT\\]"
+    regex: true

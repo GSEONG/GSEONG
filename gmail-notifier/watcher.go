@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
+	"regexp"
 	"time"
 
 	"google.golang.org/api/gmail/v1"
@@ -17,17 +17,31 @@ type EmailMessage struct {
 	Snippet string
 }
 
+// compiledFilter holds precompiled patterns for one filter entry.
+// Empty slice means "match anything" (wildcard).
+type compiledFilter struct {
+	from    []*regexp.Regexp
+	subject []*regexp.Regexp
+}
+
 type Watcher struct {
-	svc         *gmail.Service
-	cfg         *Config
+	svc      *gmail.Service
+	cfg      *Config
+	filters  []compiledFilter
 	lastHistory uint64
-	notifier    *Notifier
+	notifier *Notifier
 }
 
 func NewWatcher(svc *gmail.Service, cfg *Config, notifier *Notifier) (*Watcher, error) {
+	filters, err := compileFilters(cfg.Filters)
+	if err != nil {
+		return nil, err
+	}
+
 	w := &Watcher{
 		svc:      svc,
 		cfg:      cfg,
+		filters:  filters,
 		notifier: notifier,
 	}
 
@@ -36,8 +50,49 @@ func NewWatcher(svc *gmail.Service, cfg *Config, notifier *Notifier) (*Watcher, 
 		return nil, fmt.Errorf("초기 historyId 가져오기 실패: %w", err)
 	}
 	w.lastHistory = historyID
-	log.Printf("모니터링 시작 (historyId: %d)", historyID)
+	log.Printf("모니터링 시작 (historyId: %d, 필터 수: %d)", historyID, len(filters))
 	return w, nil
+}
+
+func compileFilters(filters []FilterConfig) ([]compiledFilter, error) {
+	result := make([]compiledFilter, len(filters))
+	for i, f := range filters {
+		cf := compiledFilter{}
+
+		for _, kw := range f.From {
+			if kw == "" {
+				continue
+			}
+			re, err := regexp.Compile(toPattern(kw, f.Regex))
+			if err != nil {
+				return nil, fmt.Errorf("필터[%d] from 패턴 오류 (%q): %w", i, kw, err)
+			}
+			cf.from = append(cf.from, re)
+		}
+
+		for _, kw := range f.Subject {
+			if kw == "" {
+				continue
+			}
+			re, err := regexp.Compile(toPattern(kw, f.Regex))
+			if err != nil {
+				return nil, fmt.Errorf("필터[%d] subject 패턴 오류 (%q): %w", i, kw, err)
+			}
+			cf.subject = append(cf.subject, re)
+		}
+
+		result[i] = cf
+	}
+	return result, nil
+}
+
+// toPattern converts a keyword to a regex string.
+// Non-regex keywords are escaped and wrapped with case-insensitive flag.
+func toPattern(keyword string, isRegex bool) string {
+	if isRegex {
+		return keyword
+	}
+	return `(?i)` + regexp.QuoteMeta(keyword)
 }
 
 func (w *Watcher) fetchLatestHistoryID() (uint64, error) {
@@ -130,14 +185,25 @@ func (w *Watcher) fetchMessage(id string) (*EmailMessage, error) {
 }
 
 func (w *Watcher) matchesFilter(msg *EmailMessage) bool {
-	if len(w.cfg.Filters) == 0 {
+	if len(w.filters) == 0 {
 		return true
 	}
 
-	for _, f := range w.cfg.Filters {
-		fromMatch := f.From == "" || strings.Contains(strings.ToLower(msg.From), strings.ToLower(f.From))
-		subjectMatch := f.Subject == "" || strings.Contains(strings.ToLower(msg.Subject), strings.ToLower(f.Subject))
-		if fromMatch && subjectMatch {
+	for _, f := range w.filters {
+		if matchesPatterns(msg.From, f.from) && matchesPatterns(msg.Subject, f.subject) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesPatterns returns true if patterns is empty (wildcard) or any pattern matches value.
+func matchesPatterns(value string, patterns []*regexp.Regexp) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, re := range patterns {
+		if re.MatchString(value) {
 			return true
 		}
 	}

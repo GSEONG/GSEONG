@@ -7,8 +7,9 @@ import (
 )
 
 type FilterConfig struct {
-	From    string `yaml:"from"`
-	Subject string `yaml:"subject"`
+	From    []string `yaml:"from"`    // 발신자 키워드 목록 (하나라도 매칭되면 통과)
+	Subject []string `yaml:"subject"` // 제목 키워드 목록 (하나라도 매칭되면 통과)
+	Regex   bool     `yaml:"regex"`   // true이면 키워드를 정규표현식으로 처리
 }
 
 type SoundConfig struct {
