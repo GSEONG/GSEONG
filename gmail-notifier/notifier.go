@@ -165,7 +165,7 @@ func uniquePath(dir, filename string) string {
 	}
 }
 
-func openFolder(path string) {
+func openFolder(path string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
@@ -175,7 +175,7 @@ func openFolder(path string) {
 	default:
 		cmd = exec.Command("xdg-open", path)
 	}
-	cmd.Start()
+	return cmd.Start()
 }
 
 func buildBody(msg *EmailMessage) string {

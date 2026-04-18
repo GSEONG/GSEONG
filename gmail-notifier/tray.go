@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -24,6 +26,7 @@ type TrayManager struct {
 	lastMailTime time.Time
 	cfg          *Config
 	logPath      string
+	logFile      *os.File
 	configPath   string
 }
 
@@ -47,9 +50,10 @@ func (t *TrayManager) SetLastMail(from string) {
 	}
 }
 
-func runTray(cfg *Config, logPath, configPath string, onReady func(), onExit func()) {
+func runTray(cfg *Config, logPath string, logFile *os.File, configPath string, onReady func(), onExit func()) {
 	trayMgr.cfg = cfg
 	trayMgr.logPath = logPath
+	trayMgr.logFile = logFile
 	trayMgr.configPath = configPath
 
 	systray.Run(
@@ -75,8 +79,12 @@ func onTrayReady(onReady func(), onExit func()) {
 	trayMgr.mu.Unlock()
 
 	systray.AddSeparator()
-	mLog    := systray.AddMenuItem("📋 로그 보기", "로그 파일 열기")
-	mConfig := systray.AddMenuItem("⚙️  설정 보기", "현재 설정 확인")
+	mLog       := systray.AddMenuItem("📋 로그 보기", "로그 파일 열기")
+	mClearLog  := systray.AddMenuItem("🗑️  로그 초기화", "로그 파일 비우기")
+
+	systray.AddSeparator()
+	mConfig    := systray.AddMenuItem("⚙️  설정 보기", "현재 설정 확인")
+	mDownloads := systray.AddMenuItem("📂 다운로드 폴더 열기", "첨부파일 저장 폴더 열기")
 
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("종료", "프로그램 종료")
@@ -103,8 +111,12 @@ func onTrayReady(onReady func(), onExit func()) {
 			if err := openInEditor(trayMgr.logPath); err != nil {
 				log.Printf("로그 파일 열기 실패: %v", err)
 			}
+		case <-mClearLog.ClickedCh:
+			clearLogFile(trayMgr.logPath, trayMgr.logFile)
 		case <-mConfig.ClickedCh:
 			showConfigDialog(trayMgr.cfg, trayMgr.configPath)
+		case <-mDownloads.ClickedCh:
+			openDownloadsFolder()
 		case <-mQuit.ClickedCh:
 			onExit()
 			systray.Quit()
@@ -178,6 +190,50 @@ func showConfigDialog(cfg *Config, configPath string) {
 	)
 	if err != nil && err != zenity.ErrCanceled {
 		log.Printf("설정 다이얼로그 오류: %v", err)
+	}
+}
+
+// clearLogFile prompts for confirmation then truncates the log file.
+func clearLogFile(logPath string, logFile *os.File) {
+	err := zenity.Question(
+		"로그 파일을 초기화하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.",
+		zenity.Title("로그 초기화"),
+		zenity.OKLabel("초기화"),
+		zenity.CancelLabel("취소"),
+		zenity.WarningIcon,
+	)
+	if err != nil {
+		return // 취소 또는 창 닫음
+	}
+
+	if err := os.Truncate(logPath, 0); err != nil {
+		log.Printf("로그 초기화 실패: %v", err)
+		return
+	}
+	// 기존 파일 핸들의 쓰기 위치를 파일 시작으로 되돌림
+	if logFile != nil {
+		logFile.Seek(0, 0)
+	}
+	log.Printf("로그 파일 초기화 완료")
+}
+
+// openDownloadsFolder opens the gmail-notifier downloads directory in the file explorer.
+func openDownloadsFolder() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("홈 디렉토리 조회 실패: %v", err)
+		return
+	}
+	dir := filepath.Join(homeDir, "Downloads", "gmail-notifier")
+
+	// 폴더가 없으면 미리 생성
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("다운로드 폴더 생성 실패: %v", err)
+		return
+	}
+
+	if err := openFolder(dir); err != nil {
+		log.Printf("다운로드 폴더 열기 실패: %v", err)
 	}
 }
 
