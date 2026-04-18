@@ -2,10 +2,15 @@ package main
 
 import (
 	"fmt"
+	"log"
+	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/getlantern/systray"
+	"github.com/ncruces/zenity"
 )
 
 // trayMgr is the global tray state shared across packages.
@@ -17,6 +22,9 @@ type TrayManager struct {
 	mLastMail    *systray.MenuItem
 	lastMailFrom string
 	lastMailTime time.Time
+	cfg          *Config
+	logPath      string
+	configPath   string
 }
 
 // SetStatus updates the status menu item text.
@@ -39,7 +47,11 @@ func (t *TrayManager) SetLastMail(from string) {
 	}
 }
 
-func runTray(onReady func(), onExit func()) {
+func runTray(cfg *Config, logPath, configPath string, onReady func(), onExit func()) {
+	trayMgr.cfg = cfg
+	trayMgr.logPath = logPath
+	trayMgr.configPath = configPath
+
 	systray.Run(
 		func() { onTrayReady(onReady, onExit) },
 		func() {},
@@ -63,9 +75,12 @@ func onTrayReady(onReady func(), onExit func()) {
 	trayMgr.mu.Unlock()
 
 	systray.AddSeparator()
+	mLog    := systray.AddMenuItem("📋 로그 보기", "로그 파일 열기")
+	mConfig := systray.AddMenuItem("⚙️  설정 보기", "현재 설정 확인")
+
+	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("종료", "프로그램 종료")
 
-	// Start application logic in background
 	go onReady()
 
 	// Periodically refresh elapsed time on "마지막 수신" item
@@ -81,9 +96,89 @@ func onTrayReady(onReady func(), onExit func()) {
 		}
 	}()
 
-	<-mQuit.ClickedCh
-	onExit()
-	systray.Quit()
+	// Menu click handlers
+	for {
+		select {
+		case <-mLog.ClickedCh:
+			if err := openInEditor(trayMgr.logPath); err != nil {
+				log.Printf("로그 파일 열기 실패: %v", err)
+			}
+		case <-mConfig.ClickedCh:
+			showConfigDialog(trayMgr.cfg, trayMgr.configPath)
+		case <-mQuit.ClickedCh:
+			onExit()
+			systray.Quit()
+			return
+		}
+	}
+}
+
+// openInEditor opens a text file with the OS default text editor.
+func openInEditor(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("notepad", path)
+	case "darwin":
+		cmd = exec.Command("open", "-t", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
+}
+
+// showConfigDialog displays current config values in a popup dialog.
+func showConfigDialog(cfg *Config, configPath string) {
+	if cfg == nil {
+		return
+	}
+
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("설정 파일: %s\n", configPath))
+	sb.WriteString(fmt.Sprintf("폴링 간격: %d초\n", cfg.PollIntervalSeconds))
+	sb.WriteString(fmt.Sprintf("Credentials: %s\n", cfg.CredentialsFile))
+	sb.WriteString(fmt.Sprintf("Token: %s\n", cfg.TokenFile))
+
+	sb.WriteString("\n[ 알림 소리 ]\n")
+	if !cfg.Sound.Enabled {
+		sb.WriteString("  비활성화\n")
+	} else if cfg.Sound.File != "" {
+		sb.WriteString(fmt.Sprintf("  파일: %s\n", cfg.Sound.File))
+	} else {
+		sb.WriteString(fmt.Sprintf("  비프음: %.0f Hz / %d ms\n",
+			cfg.Sound.BeepFrequency, cfg.Sound.BeepDurationMs))
+	}
+
+	sb.WriteString(fmt.Sprintf("\n[ 필터 — 총 %d개 ]\n", len(cfg.Filters)))
+	if len(cfg.Filters) == 0 {
+		sb.WriteString("  (없음 — 모든 이메일 알림)\n")
+	}
+	for i, f := range cfg.Filters {
+		mode := "일반"
+		if f.Regex {
+			mode = "정규식"
+		}
+		fromStr := "(모두)"
+		if len(f.From) > 0 {
+			fromStr = strings.Join(f.From, ", ")
+		}
+		subjectStr := "(모두)"
+		if len(f.Subject) > 0 {
+			subjectStr = strings.Join(f.Subject, ", ")
+		}
+		sb.WriteString(fmt.Sprintf("  [%d] (%s) 발신: %s / 제목: %s\n",
+			i+1, mode, fromStr, subjectStr))
+	}
+
+	err := zenity.Info(
+		sb.String(),
+		zenity.Title("현재 설정"),
+		zenity.OKLabel("닫기"),
+	)
+	if err != nil && err != zenity.ErrCanceled {
+		log.Printf("설정 다이얼로그 오류: %v", err)
+	}
 }
 
 func elapsedLabel(t time.Time) string {

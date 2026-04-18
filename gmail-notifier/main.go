@@ -12,16 +12,25 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "설정 파일 경로")
 	flag.Parse()
 
-	setupLogger()
+	logPath := setupLogger()
 
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		log.Fatalf("설정 파일 로드 실패: %v", err)
 	}
 
+	// Resolve config path to absolute so tray can display and open it
+	absConfig, err := filepath.Abs(*configPath)
+	if err != nil {
+		absConfig = *configPath
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	runTray(
+		cfg,
+		logPath,
+		absConfig,
 		func() {
 			trayMgr.SetStatus("🔗 Gmail 연결 중...")
 
@@ -51,17 +60,19 @@ func main() {
 	)
 }
 
-// setupLogger redirects log output to gmail-notifier.log in the same directory as the executable.
-func setupLogger() {
+// setupLogger redirects log output to gmail-notifier.log next to the executable.
+// Returns the log file path.
+func setupLogger() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return
+		return ""
 	}
 	logPath := filepath.Join(filepath.Dir(exe), "gmail-notifier.log")
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return
+		return logPath
 	}
 	log.SetOutput(f)
 	log.SetFlags(log.Ldate | log.Ltime)
+	return logPath
 }
