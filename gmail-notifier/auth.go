@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 
 	"golang.org/x/oauth2"
@@ -91,14 +93,55 @@ func saveToken(path string, tok *oauth2.Token) error {
 }
 
 func fetchTokenFromWeb(ctx context.Context, cfg *oauth2.Config, tokenFile string) (*oauth2.Token, error) {
+	// 빈 포트로 로컬 서버 시작 — OS가 사용 가능한 포트를 자동 배정
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("로컬 인증 서버 시작 실패: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	cfg.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d", port)
+
 	authURL := cfg.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
-	fmt.Printf("\n브라우저에서 아래 URL을 열어 Gmail 접근 권한을 허용하세요:\n\n%s\n\n", authURL)
-	fmt.Print("인증 코드를 입력하세요: ")
+
+	fmt.Println("\nGmail 인증을 위해 브라우저를 엽니다...")
+	fmt.Printf("브라우저가 열리지 않으면 아래 URL을 직접 복사해 접속하세요:\n%s\n\n", authURL)
+	openBrowser(authURL)
+
+	codeCh := make(chan string, 1)
+	errCh := make(chan error, 1)
+
+	mux := http.NewServeMux()
+	srv := &http.Server{Handler: mux}
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			errMsg := r.URL.Query().Get("error")
+			fmt.Fprintf(w, "<h2>인증 실패</h2><p>%s</p><p>터미널을 확인하세요.</p>", errMsg)
+			errCh <- fmt.Errorf("인증 거부 또는 오류: %s", errMsg)
+			return
+		}
+		fmt.Fprintf(w, "<h2>인증 완료!</h2><p>이 창을 닫고 터미널로 돌아가세요.</p>")
+		codeCh <- code
+	})
+
+	go func() {
+		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
+			errCh <- fmt.Errorf("인증 서버 오류: %w", err)
+		}
+	}()
 
 	var code string
-	if _, err := fmt.Scan(&code); err != nil {
-		return nil, fmt.Errorf("인증 코드 읽기 실패: %w", err)
+	select {
+	case code = <-codeCh:
+	case err := <-errCh:
+		srv.Shutdown(context.Background())
+		return nil, err
+	case <-ctx.Done():
+		srv.Shutdown(context.Background())
+		return nil, ctx.Err()
 	}
+	srv.Shutdown(context.Background())
 
 	tok, err := cfg.Exchange(ctx, code)
 	if err != nil {
@@ -108,5 +151,19 @@ func fetchTokenFromWeb(ctx context.Context, cfg *oauth2.Config, tokenFile string
 	if err := saveToken(tokenFile, tok); err != nil {
 		fmt.Printf("경고: 토큰 저장 실패 - %v\n", err)
 	}
+	fmt.Println("인증 성공! token.json 이 저장되었습니다.")
 	return tok, nil
+}
+
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	cmd.Start()
 }
