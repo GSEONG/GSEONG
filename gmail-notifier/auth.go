@@ -159,7 +159,10 @@ func openBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
+		// cmd /c start 는 & 를 명령어 구분자로 해석해 URL을 잘라냄.
+		// PowerShell Start-Process 로 URL 전체를 문자열로 전달한다.
+		cmd = exec.Command("powershell", "-NoProfile", "-c",
+			fmt.Sprintf(`Start-Process "%s"`, url))
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
