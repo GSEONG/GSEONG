@@ -41,7 +41,7 @@ func main() {
 				return
 			}
 
-			notifier := NewNotifier(cfg.Sound)
+			notifier := NewNotifier(cfg.Sound, svc)
 
 			watcher, err := NewWatcher(svc, cfg, notifier)
 			if err != nil {

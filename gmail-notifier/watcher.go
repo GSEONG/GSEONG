@@ -16,11 +16,19 @@ const (
 	apiCallTimeout     = 15 * time.Second
 )
 
+type Attachment struct {
+	Filename     string
+	AttachmentID string
+	MimeType     string
+	Size         int64 // bytes
+}
+
 type EmailMessage struct {
-	ID      string
-	From    string
-	Subject string
-	Snippet string
+	ID          string
+	From        string
+	Subject     string
+	Snippet     string
+	Attachments []Attachment
 }
 
 // compiledFilter holds precompiled patterns for one filter entry.
@@ -191,10 +199,11 @@ func (w *Watcher) checkNewMails(ctx context.Context) {
 }
 
 func (w *Watcher) fetchMessage(ctx context.Context, id string) (*EmailMessage, error) {
+	// Format("full") is needed to get attachment metadata from payload parts.
 	raw, err := w.svc.Users.Messages.Get("me", id).
 		Context(ctx).
-		Format("metadata").
-		MetadataHeaders("From", "Subject").Do()
+		Format("full").
+		Do()
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +221,28 @@ func (w *Watcher) fetchMessage(ctx context.Context, id string) (*EmailMessage, e
 			msg.Subject = h.Value
 		}
 	}
+
+	msg.Attachments = extractAttachments(raw.Payload.Parts)
 	return msg, nil
+}
+
+// extractAttachments recursively collects attachment metadata from MIME parts.
+func extractAttachments(parts []*gmail.MessagePart) []Attachment {
+	var result []Attachment
+	for _, part := range parts {
+		if part.Filename != "" && part.Body != nil && part.Body.AttachmentId != "" {
+			result = append(result, Attachment{
+				Filename:     part.Filename,
+				AttachmentID: part.Body.AttachmentId,
+				MimeType:     part.MimeType,
+				Size:         part.Body.Size,
+			})
+		}
+		if len(part.Parts) > 0 {
+			result = append(result, extractAttachments(part.Parts)...)
+		}
+	}
+	return result
 }
 
 func (w *Watcher) matchesFilter(msg *EmailMessage) bool {
