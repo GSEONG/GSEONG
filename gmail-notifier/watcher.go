@@ -5,9 +5,15 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sync"
 	"time"
 
 	"google.golang.org/api/gmail/v1"
+)
+
+const (
+	maxRegexPatternLen = 500
+	apiCallTimeout     = 15 * time.Second
 )
 
 type EmailMessage struct {
@@ -25,11 +31,12 @@ type compiledFilter struct {
 }
 
 type Watcher struct {
-	svc      *gmail.Service
-	cfg      *Config
-	filters  []compiledFilter
+	svc         *gmail.Service
+	cfg         *Config
+	filters     []compiledFilter
 	lastHistory uint64
-	notifier *Notifier
+	historyMu   sync.Mutex
+	notifier    *Notifier
 }
 
 func NewWatcher(svc *gmail.Service, cfg *Config, notifier *Notifier) (*Watcher, error) {
@@ -63,9 +70,9 @@ func compileFilters(filters []FilterConfig) ([]compiledFilter, error) {
 			if kw == "" {
 				continue
 			}
-			re, err := regexp.Compile(toPattern(kw, f.Regex))
+			re, err := compilePattern(kw, f.Regex, i, "from")
 			if err != nil {
-				return nil, fmt.Errorf("필터[%d] from 패턴 오류 (%q): %w", i, kw, err)
+				return nil, err
 			}
 			cf.from = append(cf.from, re)
 		}
@@ -74,9 +81,9 @@ func compileFilters(filters []FilterConfig) ([]compiledFilter, error) {
 			if kw == "" {
 				continue
 			}
-			re, err := regexp.Compile(toPattern(kw, f.Regex))
+			re, err := compilePattern(kw, f.Regex, i, "subject")
 			if err != nil {
-				return nil, fmt.Errorf("필터[%d] subject 패턴 오류 (%q): %w", i, kw, err)
+				return nil, err
 			}
 			cf.subject = append(cf.subject, re)
 		}
@@ -84,6 +91,18 @@ func compileFilters(filters []FilterConfig) ([]compiledFilter, error) {
 		result[i] = cf
 	}
 	return result, nil
+}
+
+func compilePattern(kw string, isRegex bool, idx int, field string) (*regexp.Regexp, error) {
+	if isRegex && len(kw) > maxRegexPatternLen {
+		return nil, fmt.Errorf("필터[%d] %s 패턴이 너무 깁니다 (최대 %d자): %q",
+			idx, field, maxRegexPatternLen, kw)
+	}
+	re, err := regexp.Compile(toPattern(kw, isRegex))
+	if err != nil {
+		return nil, fmt.Errorf("필터[%d] %s 패턴 오류 (%q): %w", idx, field, kw, err)
+	}
+	return re, nil
 }
 
 // toPattern converts a keyword to a regex string.
@@ -127,14 +146,22 @@ func (w *Watcher) Poll(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			w.checkNewMails()
+			w.checkNewMails(ctx)
 		}
 	}
 }
 
-func (w *Watcher) checkNewMails() {
+func (w *Watcher) checkNewMails(ctx context.Context) {
+	callCtx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+	defer cancel()
+
+	w.historyMu.Lock()
+	startID := w.lastHistory
+	w.historyMu.Unlock()
+
 	res, err := w.svc.Users.History.List("me").
-		StartHistoryId(w.lastHistory).
+		Context(callCtx).
+		StartHistoryId(startID).
 		HistoryTypes("messageAdded").
 		LabelId("INBOX").
 		Do()
@@ -144,14 +171,16 @@ func (w *Watcher) checkNewMails() {
 	}
 
 	if res.HistoryId > 0 {
+		w.historyMu.Lock()
 		w.lastHistory = res.HistoryId
+		w.historyMu.Unlock()
 	}
 
 	for _, h := range res.History {
 		for _, added := range h.MessagesAdded {
-			msg, err := w.fetchMessage(added.Message.Id)
+			msg, err := w.fetchMessage(callCtx, added.Message.Id)
 			if err != nil {
-				log.Printf("메시지 조회 오류 (%s): %v", added.Message.Id, err)
+				log.Printf("메시지 조회 오류: %v", err)
 				continue
 			}
 			if w.matchesFilter(msg) {
@@ -161,8 +190,10 @@ func (w *Watcher) checkNewMails() {
 	}
 }
 
-func (w *Watcher) fetchMessage(id string) (*EmailMessage, error) {
-	raw, err := w.svc.Users.Messages.Get("me", id).Format("metadata").
+func (w *Watcher) fetchMessage(ctx context.Context, id string) (*EmailMessage, error) {
+	raw, err := w.svc.Users.Messages.Get("me", id).
+		Context(ctx).
+		Format("metadata").
 		MetadataHeaders("From", "Subject").Do()
 	if err != nil {
 		return nil, err

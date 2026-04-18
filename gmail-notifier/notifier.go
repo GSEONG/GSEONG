@@ -21,7 +21,7 @@ func NewNotifier(soundCfg SoundConfig) *Notifier {
 }
 
 func (n *Notifier) Notify(msg *EmailMessage) {
-	log.Printf("[알림] From: %s | Subject: %s", msg.From, msg.Subject)
+	log.Printf("[알림] 새 이메일 도착 (ID: %s)", msg.ID)
 
 	// 시스템 트레이 알림
 	title := fmt.Sprintf("새 이메일: %s", msg.From)

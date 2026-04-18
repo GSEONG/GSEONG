@@ -13,6 +13,8 @@ import (
 )
 
 func newGmailService(ctx context.Context, credentialsFile, tokenFile string) (*gmail.Service, error) {
+	warnIfPermissive(credentialsFile)
+
 	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("credentials 파일을 읽을 수 없습니다 (%s): %w\n"+
@@ -34,6 +36,18 @@ func newGmailService(ctx context.Context, credentialsFile, tokenFile string) (*g
 		return nil, fmt.Errorf("Gmail 서비스 생성 실패: %w", err)
 	}
 	return svc, nil
+}
+
+// warnIfPermissive logs a warning if the file is readable by group or others.
+func warnIfPermissive(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		fmt.Printf("경고: %s 의 파일 권한이 너무 개방적입니다 (%o). 보안을 위해 chmod 600 %s 를 실행하세요.\n",
+			path, info.Mode().Perm(), path)
+	}
 }
 
 func getHTTPClient(ctx context.Context, cfg *oauth2.Config, tokenFile string) (*http.Client, error) {
@@ -62,7 +76,8 @@ func loadToken(path string) (*oauth2.Token, error) {
 }
 
 func saveToken(path string, tok *oauth2.Token) error {
-	f, err := os.Create(path)
+	// 0600: 소유자만 읽기/쓰기 가능 — refresh token 유출 방지
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("토큰 저장 실패 (%s): %w", path, err)
 	}
