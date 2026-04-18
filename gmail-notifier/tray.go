@@ -28,15 +28,17 @@ type TrayManager struct {
 	logPath      string
 	logFile      *os.File
 	configPath   string
+	dashPort     int
 }
 
-// SetStatus updates the status menu item text.
+// SetStatus updates the status menu item text and dashboard.
 func (t *TrayManager) SetStatus(text string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if t.mStatus != nil {
 		t.mStatus.SetTitle(text)
 	}
+	t.mu.Unlock()
+	dashServer.SetStatus(text)
 }
 
 // SetLastMail records the latest received email sender and updates the menu.
@@ -50,11 +52,12 @@ func (t *TrayManager) SetLastMail(from string) {
 	}
 }
 
-func runTray(cfg *Config, logPath string, logFile *os.File, configPath string, onReady func(), onExit func()) {
+func runTray(cfg *Config, logPath string, logFile *os.File, configPath string, dashPort int, onReady func(), onExit func()) {
 	trayMgr.cfg = cfg
 	trayMgr.logPath = logPath
 	trayMgr.logFile = logFile
 	trayMgr.configPath = configPath
+	trayMgr.dashPort = dashPort
 
 	systray.Run(
 		func() { onTrayReady(onReady, onExit) },
@@ -85,6 +88,7 @@ func onTrayReady(onReady func(), onExit func()) {
 	systray.AddSeparator()
 	mConfig    := systray.AddMenuItem("⚙️  설정 보기", "현재 설정 확인")
 	mDownloads := systray.AddMenuItem("📂 다운로드 폴더 열기", "첨부파일 저장 폴더 열기")
+	mDashboard := systray.AddMenuItem("🖥️  대시보드 열기", "웹 대시보드 열기")
 
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("종료", "프로그램 종료")
@@ -117,6 +121,10 @@ func onTrayReady(onReady func(), onExit func()) {
 			showConfigDialog(trayMgr.cfg, trayMgr.configPath)
 		case <-mDownloads.ClickedCh:
 			openDownloadsFolder()
+		case <-mDashboard.ClickedCh:
+			if trayMgr.dashPort > 0 {
+				openBrowser(fmt.Sprintf("http://127.0.0.1:%d", trayMgr.dashPort))
+			}
 		case <-mQuit.ClickedCh:
 			onExit()
 			systray.Quit()

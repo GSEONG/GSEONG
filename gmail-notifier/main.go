@@ -24,6 +24,11 @@ func main() {
 		absConfig = *configPath
 	}
 
+	dashPort, err := dashServer.Start(logPath)
+	if err != nil {
+		log.Printf("대시보드 서버 시작 실패: %v", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	runTray(
@@ -31,6 +36,7 @@ func main() {
 		logPath,
 		logFile,
 		absConfig,
+		dashPort,
 		func() {
 			trayMgr.SetStatus("🔗 Gmail 연결 중...")
 
