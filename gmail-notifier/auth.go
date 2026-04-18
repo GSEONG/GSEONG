@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -39,7 +40,11 @@ func newGmailService(ctx context.Context, credentialsFile, tokenFile string) (*g
 }
 
 // warnIfPermissive logs a warning if the file is readable by group or others.
+// Windows uses a different permission model, so the check is skipped there.
 func warnIfPermissive(path string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return
