@@ -36,7 +36,7 @@ func defaultConfig() *Config {
 		Sound: SoundConfig{
 			Enabled:        true,
 			BeepFrequency:  880,
-			BeepDurationMs: 300,
+			BeepDurationMs: 800,
 		},
 	}
 }
@@ -69,7 +69,7 @@ func loadConfig(path string) (*Config, error) {
 		cfg.Sound.BeepFrequency = 880
 	}
 	if cfg.Sound.BeepDurationMs <= 0 {
-		cfg.Sound.BeepDurationMs = 300
+		cfg.Sound.BeepDurationMs = 800
 	}
 
 	return cfg, nil
