@@ -48,6 +48,7 @@ func main() {
 			}
 
 			notifier := NewNotifier(cfg.Sound, svc)
+			dashServer.SetGmailService(svc)
 
 			watcher, err := NewWatcher(svc, cfg, notifier)
 			if err != nil {
