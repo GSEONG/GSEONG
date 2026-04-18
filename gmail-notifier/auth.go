@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 
+	"github.com/gen2brain/beeep"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
@@ -103,8 +105,9 @@ func fetchTokenFromWeb(ctx context.Context, cfg *oauth2.Config, tokenFile string
 
 	authURL := cfg.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 
-	fmt.Println("\nGmail 인증을 위해 브라우저를 엽니다...")
-	fmt.Printf("브라우저가 열리지 않으면 아래 URL을 직접 복사해 접속하세요:\n%s\n\n", authURL)
+	trayMgr.SetStatus("🔐 Gmail 인증 필요")
+	log.Printf("Gmail 인증 URL: %s", authURL)
+	beeep.Notify("Gmail 알리미 — 인증 필요", "브라우저에서 Gmail 접근 권한을 허용해주세요.", "")
 	openBrowser(authURL)
 
 	codeCh := make(chan string, 1)
@@ -151,7 +154,8 @@ func fetchTokenFromWeb(ctx context.Context, cfg *oauth2.Config, tokenFile string
 	if err := saveToken(tokenFile, tok); err != nil {
 		fmt.Printf("경고: 토큰 저장 실패 - %v\n", err)
 	}
-	fmt.Println("인증 성공! token.json 이 저장되었습니다.")
+	trayMgr.SetStatus("✅ 모니터링 중")
+	log.Println("인증 성공: token.json 저장 완료")
 	return tok, nil
 }
 
