@@ -43,6 +43,15 @@ tr:hover td{background:#fafcff}
 .att-link:hover{background:#d2e3fc}
 .att-link .sz{color:#5f6368;font-size:.72rem}
 
+/* ── Filter bar ── */
+.filter-bar{display:flex;gap:8px;padding:11px 18px;border-bottom:1px solid #eee;background:#fafafa;flex-wrap:wrap}
+.filter-bar input[type=text]{flex:1;min-width:160px;padding:6px 12px;border:1px solid #ddd;border-radius:6px;font-size:.85rem;outline:none}
+.filter-bar input[type=text]:focus{border-color:#4285F4;box-shadow:0 0 0 2px rgba(66,133,244,.15)}
+.filter-bar select{padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:.85rem;background:#fff;cursor:pointer;outline:none}
+.filter-bar .btn-clear{padding:6px 12px;border:1px solid #ddd;background:#fff;border-radius:6px;font-size:.82rem;cursor:pointer;color:#666;white-space:nowrap}
+.filter-bar .btn-clear:hover{background:#f0f0f0}
+#filter-count{font-size:.8rem;color:#aaa;align-self:center;white-space:nowrap}
+
 /* ── Pagination ── */
 .pager{display:flex;align-items:center;gap:10px;padding:11px 18px;border-top:1px solid #eee;font-size:.85rem;color:#555}
 .pager button{border:1px solid #ddd;background:#fff;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:.84rem;transition:all .15s}
@@ -89,6 +98,16 @@ tr:hover td{background:#fafcff}
 
 <section>
   <h2>이메일 목록 <span id="hist-badge">히스토리 포함</span></h2>
+  <div class="filter-bar">
+    <input type="text" id="filter-text" placeholder="발신자 또는 제목 검색..." oninput="onFilter()">
+    <select id="filter-type" onchange="onFilter()">
+      <option value="all">전체</option>
+      <option value="live">실시간만</option>
+      <option value="hist">히스토리만</option>
+    </select>
+    <button class="btn-clear" onclick="clearFilter()">✕ 초기화</button>
+    <span id="filter-count"></span>
+  </div>
   <div id="mail-wrap"><div class="no-data">수신된 이메일이 없습니다.</div></div>
   <div id="pager" style="display:none" class="pager">
     <button id="btn-prev" onclick="changePage(-1)" disabled>‹ 이전</button>
@@ -112,6 +131,8 @@ let prevTotal   = 0;
 let allMails    = [];
 let currentPage = 0;
 const perPage   = 20;
+let filterText  = '';
+let filterType  = 'all'; // 'all' | 'live' | 'hist'
 
 /* ── Notification permission ────────────────────────── */
 function requestNotifPerm() {
@@ -165,16 +186,48 @@ function showDesktopNotif(mail) {
   setTimeout(() => n.close(), 6000);
 }
 
+/* ── Filter ─────────────────────────────────────────── */
+function getFilteredMails() {
+  const q = filterText.trim().toLowerCase();
+  return allMails.filter(function(m) {
+    if (filterType === 'live' &&  m.isHist) return false;
+    if (filterType === 'hist' && !m.isHist) return false;
+    if (q) {
+      const from    = (m.from    || '').toLowerCase();
+      const subject = (m.subject || '').toLowerCase();
+      if (!from.includes(q) && !subject.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function onFilter() {
+  filterText = document.getElementById('filter-text').value;
+  filterType = document.getElementById('filter-type').value;
+  currentPage = 0;
+  renderPage();
+}
+
+function clearFilter() {
+  document.getElementById('filter-text').value = '';
+  document.getElementById('filter-type').value = 'all';
+  filterText = '';
+  filterType = 'all';
+  currentPage = 0;
+  renderPage();
+}
+
 /* ── Pagination ─────────────────────────────────────── */
 function changePage(delta) {
-  const pages = Math.max(1, Math.ceil(allMails.length / perPage));
-  currentPage = Math.max(0, Math.min(currentPage + delta, pages - 1));
+  const filtered = getFilteredMails();
+  const pages    = Math.max(1, Math.ceil(filtered.length / perPage));
+  currentPage    = Math.max(0, Math.min(currentPage + delta, pages - 1));
   renderPage();
 }
 
 function setMails(mails) {
   const prevFirstId = allMails.length > 0 ? allMails[0].id : null;
-  const newFirstId  = mails  && mails.length  > 0 ? mails[0].id  : null;
+  const newFirstId  = mails && mails.length > 0 ? mails[0].id : null;
 
   // Jump to page 0 only when a new live mail is prepended
   if (newFirstId && newFirstId !== prevFirstId && mails[0] && !mails[0].isHist) {
@@ -184,19 +237,31 @@ function setMails(mails) {
   allMails = mails || [];
 
   // Show badge when historical mails are included
-  const hasHist = allMails.some(m => m.isHist);
+  const hasHist = allMails.some(function(m) { return m.isHist; });
   document.getElementById('hist-badge').style.display = hasHist ? 'inline-block' : 'none';
 
   renderPage();
 }
 
 function renderPage() {
-  const wrap  = document.getElementById('mail-wrap');
-  const pager = document.getElementById('pager');
-  const total = allMails.length;
+  const wrap     = document.getElementById('mail-wrap');
+  const pager    = document.getElementById('pager');
+  const filtered = getFilteredMails();
+  const total    = filtered.length;
+  const allTotal = allMails.length;
+
+  // Filter count label
+  const countEl = document.getElementById('filter-count');
+  if (filterText || filterType !== 'all') {
+    countEl.textContent = total + ' / 전체 ' + allTotal + '건';
+  } else {
+    countEl.textContent = '';
+  }
 
   if (total === 0) {
-    wrap.innerHTML = '<div class="no-data">수신된 이메일이 없습니다.</div>';
+    wrap.innerHTML = allTotal === 0
+      ? '<div class="no-data">수신된 이메일이 없습니다.</div>'
+      : '<div class="no-data">검색 결과가 없습니다.</div>';
     pager.style.display = 'none';
     return;
   }
@@ -205,32 +270,33 @@ function renderPage() {
   if (currentPage >= pages) currentPage = pages - 1;
 
   const start = currentPage * perPage;
-  const slice = allMails.slice(start, start + perPage);
+  const slice = filtered.slice(start, start + perPage);
 
   let html = '<table><thead><tr><th>시간</th><th>발신자</th><th>제목</th><th>첨부파일</th></tr></thead><tbody>';
-  slice.forEach(m => {
+  slice.forEach(function(m) {
     const rowCls = m.isHist ? ' class="hist-row"' : '';
     let attHtml = '';
     if (m.atts && m.atts.length > 0) {
       attHtml = '<div class="att-list">';
-      m.atts.forEach(a => {
+      m.atts.forEach(function(a) {
         const url = '/download?msgId=' + encodeURIComponent(a.msgId) +
-                    '&attId='  + encodeURIComponent(a.attId) +
-                    '&filename=' + encodeURIComponent(a.filename);
+                    '&attId='          + encodeURIComponent(a.attId) +
+                    '&filename='       + encodeURIComponent(a.filename);
         attHtml += '<a class="att-link" href="' + url + '" download="' + esc(a.filename) + '">' +
                    '📎 ' + esc(a.filename) +
                    ' <span class="sz">' + fmtSize(a.size) + '</span></a>';
       });
       attHtml += '</div>';
     }
-    html += '<tr' + rowCls + '><td>' + esc(m.time) + '</td><td>' +
-            esc(m.from) + '</td><td>' + esc(m.subject) + '</td><td>' +
-            attHtml + '</td></tr>';
+    html += '<tr' + rowCls + '><td>' + esc(m.time)    + '</td><td>' +
+                               esc(m.from)    + '</td><td>' +
+                               esc(m.subject) + '</td><td>' +
+                               attHtml        + '</td></tr>';
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
 
-  // Update pager controls
+  // Pager controls
   pager.style.display = pages > 1 ? 'flex' : 'none';
   document.getElementById('pager-info').textContent  = (currentPage + 1) + ' / ' + pages + '페이지';
   document.getElementById('pager-count').textContent = '총 ' + total + '건';
