@@ -57,6 +57,8 @@ func main() {
 				return
 			}
 
+			go dashServer.LoadHistory(50)
+
 			trayMgr.SetStatus("✅ 모니터링 중")
 			watcher.Poll(ctx)
 		},
