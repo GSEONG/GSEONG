@@ -244,10 +244,11 @@ func (d *DashboardServer) LoadHistory(n int) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			// Format("full") is required to get payload.parts with body.attachmentId.
+			// Format("metadata") omits parts, so attachments cannot be detected.
 			raw, err := svc.Users.Messages.Get("me", msgID).
 				Context(ctx).
-				Format("metadata").
-				MetadataHeaders("From", "Subject").
+				Format("full").
 				Do()
 			if err != nil {
 				return
@@ -256,16 +257,25 @@ func (d *DashboardServer) LoadHistory(n int) {
 			entry := mailEntry{
 				ID:     msgID,
 				IsHist: true,
-				// internalDate is Unix ms; format as date+time for historical entries
-				Time: time.UnixMilli(raw.InternalDate).Local().Format("01-02 15:04"),
-				Atts: []attEntry{},
+				Time:   time.UnixMilli(raw.InternalDate).Local().Format("01-02 15:04"),
+				Atts:   []attEntry{},
 			}
-			for _, h := range raw.Payload.Headers {
-				switch h.Name {
-				case "From":
-					entry.From = h.Value
-				case "Subject":
-					entry.Subject = h.Value
+			if raw.Payload != nil {
+				for _, h := range raw.Payload.Headers {
+					switch h.Name {
+					case "From":
+						entry.From = h.Value
+					case "Subject":
+						entry.Subject = h.Value
+					}
+				}
+				for _, a := range extractAttachments(raw.Payload.Parts) {
+					entry.Atts = append(entry.Atts, attEntry{
+						MsgID:    msgID,
+						AttID:    a.AttachmentID,
+						Filename: a.Filename,
+						Size:     a.Size,
+					})
 				}
 			}
 			results[idx] = result{entry: entry, ok: true}
