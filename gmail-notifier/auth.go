@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/gen2brain/beeep"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/gmail/v1"
@@ -107,7 +106,7 @@ func fetchTokenFromWeb(ctx context.Context, cfg *oauth2.Config, tokenFile string
 
 	trayMgr.SetStatus("🔐 Gmail 인증 필요")
 	log.Printf("Gmail 인증 URL: %s", authURL)
-	beeep.Notify("Gmail 알리미 — 인증 필요", "브라우저에서 Gmail 접근 권한을 허용해주세요.", "")
+	sysNotify("Gmail 알리미 — 인증 필요", "브라우저에서 Gmail 접근 권한을 허용해주세요.")
 	openBrowser(authURL)
 
 	codeCh := make(chan string, 1)

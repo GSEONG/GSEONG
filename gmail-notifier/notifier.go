@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/gen2brain/beeep"
 	"github.com/ncruces/zenity"
 	"google.golang.org/api/gmail/v1"
 )
@@ -34,11 +33,7 @@ func (n *Notifier) Notify(msg *EmailMessage) {
 	trayMgr.SetLastMail(msg.From)
 	dashServer.AddMail(msg)
 
-	title := fmt.Sprintf("새 이메일: %s", msg.From)
-	body := buildBody(msg)
-	if err := beeep.Notify(title, body, ""); err != nil {
-		log.Printf("시스템 알림 실패: %v", err)
-	}
+	sysNotify(fmt.Sprintf("새 이메일: %s", msg.From), buildBody(msg))
 
 	playSound(n.soundCfg)
 
@@ -118,11 +113,7 @@ func (n *Notifier) downloadAttachments(msg *EmailMessage) {
 	}
 
 	// 저장 완료 알림 + 폴더 열기
-	beeep.Notify(
-		"다운로드 완료",
-		fmt.Sprintf("%d개 파일이 저장되었습니다.\n%s", len(saved), saveDir),
-		"",
-	)
+	sysNotify("다운로드 완료", fmt.Sprintf("%d개 파일이 저장되었습니다.\n%s", len(saved), saveDir))
 	openFolder(saveDir)
 }
 
